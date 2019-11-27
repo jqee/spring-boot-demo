@@ -1,26 +1,15 @@
-/*******************************************************************************
- * $Header: /cvsroot/PTP50/workdir/eos/develop/src/server/com.primeton.eos.engine.core/src/main/java/com/primeton/ext/engine/core/SimpleConditionHelper.java,v 1.1 2013/10/11 18:53:49 haoyf Exp $
- * $Revision: 1.1 $
- * $Date: 2013/10/11 18:53:49 $
- *
- *==============================================================================
- *
- * Copyright (c) 2001-2006 Primeton Technologies, Ltd.
- * All rights reserved.
- *
- * Created on 2007-7-11
- *******************************************************************************/
-
-
 package com.spring.demo.compare;
 
+import cn.hutool.core.util.NumberUtil;
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONException;
+import com.alibaba.fastjson.JSONObject;
+import com.google.common.collect.Sets;
 import org.apache.commons.lang3.StringUtils;
 
 import java.lang.reflect.Array;
-import java.util.Collection;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.Map;
+import java.math.BigDecimal;
+import java.util.*;
 
 
 /**
@@ -30,7 +19,13 @@ import java.util.Map;
  * @author
  */
 public final class SimpleConditionHelper {
-    private static Map<String, Integer> operators = new HashMap<>();
+
+    private static final Set<String> signalSet = new HashSet<>();
+
+    static {
+        signalSet.add(",");
+        signalSet.add(";");
+    }
 
     public static boolean value(SimpleCondition condition, ExpContext context) {
         Object left = getValue(condition.getLeftValue(), context);
@@ -67,44 +62,74 @@ public final class SimpleConditionHelper {
         return ValueType.Variable == type;
     }
 
-    public static void main(String[] args) {
-        String a = "3345";
-        System.out.println(compare(a, a, Operator.CONTAINS));
-    }
-
-    private static boolean compare(Object left, Object right, Operator operator) {
+    public static boolean compare(Object left, Object right, Operator operator) {
         switch (operator) {
             case EQ:
-                return equal(left, right);
+                return equals(left, right);
             case GE:
-                return greaterEqual(left, right);
             case GT:
-                return greaterThan(left, right);
-            case IN:
-                return in(left, right);
             case LE:
-                return lowerEqual(left, right);
             case LT:
-                return lowerThan(left, right);
+                return compareNumber(left, right, operator);
+            case IN:
+                return isIn(left, right);
             case NE:
-                return notEqual(left, right);
+                return notEquals(left, right);
             case NOT_IN:
                 return notIn(left, right);
             case CONTAINS:
                 return contains(left, right);
             case END_WITH:
-                return endWith(left, right);
+                return isEndWith(left, right);
             case IS_EMPTY:
                 return isEmpty(left);
             case NOT_EMPTY:
                 return notEmpty(left);
             case START_WITH:
-                return startWith(left, right);
+                return isStartWith(left, right);
             case NOT_CONTAINS:
-                return notContains(left, right);
+                return isNotContains(left, right);
             default:
                 return false;
         }
+    }
+
+
+    private static boolean compareNumber(Object left, Object right, Operator operator) {
+        if (isAllDate(left, right)) {
+            Date leftDate = (Date) left;
+            Date rightDate = (Date) right;
+            return compareNumber(leftDate.getTime(), rightDate.getTime(), operator);
+        }
+        if (!isAllNumber(left, right)) {
+            return false;
+        }
+        BigDecimal leftNum = NumberUtil.toBigDecimal(toString(left));
+        BigDecimal rightNum = NumberUtil.toBigDecimal(toString(right));
+        switch (operator) {
+            case LT:
+                return NumberUtil.isLess(leftNum, rightNum);
+            case LE:
+                return NumberUtil.isLessOrEqual(leftNum, rightNum);
+            case GT:
+                return !NumberUtil.isLessOrEqual(leftNum, rightNum);
+            case GE:
+                return !NumberUtil.isLess(leftNum, rightNum);
+            default:
+                return false;
+        }
+    }
+
+    private static boolean isAllDate(Object... params) {
+        if (params.length < 1) {
+            return false;
+        }
+        for (Object param : params) {
+            if (!(param instanceof Date)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean contains(Object left, Object right) {
@@ -115,15 +140,15 @@ public final class SimpleConditionHelper {
         return isNoneBlank(left, right) && left.contains(right);
     }
 
-    private static boolean notContains(Object left, Object right) {
+    private static boolean isNotContains(Object left, Object right) {
         return !contains(left, right);
     }
 
-    private static boolean startWith(Object left, Object right) {
-        return startWith(toString(left), toString(right));
+    private static boolean isStartWith(Object left, Object right) {
+        return isStartWith(toString(left), toString(right));
     }
 
-    private static boolean startWith(String left, String right) {
+    private static boolean isStartWith(String left, String right) {
         return isNoneBlank(left, right) && left.startsWith(right);
     }
 
@@ -139,11 +164,11 @@ public final class SimpleConditionHelper {
         return !isEmpty(left);
     }
 
-    private static boolean endWith(Object left, Object right) {
-        return endWith(toString(left), toString(right));
+    private static boolean isEndWith(Object left, Object right) {
+        return isEndWith(toString(left), toString(right));
     }
 
-    private static boolean endWith(String left, String right) {
+    private static boolean isEndWith(String left, String right) {
         return isNoneBlank(left, right) && left.endsWith(right);
     }
 
@@ -152,989 +177,127 @@ public final class SimpleConditionHelper {
     }
 
     private static String toString(Object object) {
-        return object == null ? null : String.valueOf(object);
+        if (object == null) {
+            return null;
+        }
+        if (object instanceof String) {
+            return (String) object;
+        }
+        return JSON.toJSONString(object);
     }
 
-    private static boolean in(Object left, Object right) {
+    @SuppressWarnings("unchecked")
+    private static boolean isIn(Object left, Object right) {
+        if (isAnyNull(left, right)) {
+            return false;
+        }
+        if (right instanceof Map) {
+            Map<Object, Object> map = (Map<Object, Object>) right;
+            return map.containsKey(left);
+        }
+        if (right instanceof Collection) {
+            Collection<Object> collection = (Collection<Object>) right;
+            if (collection.contains(left) || collection.contains(JSON.toJSONString(left))) {
+                return true;
+            }
+
+        }
+        Class<?> rightClazz = right.getClass();
+        if (rightClazz.isArray()) {
+            int len = Array.getLength(right);
+            for (int i = 0; i < len; ++i) {
+                Object item = Array.get(right, i);
+                if (equals(left, item)) {
+                    return true;
+                }
+            }
+        }
+        // 根据逗号和分号分割查询
+        if (checkSpilt(left, right)) {
+            return true;
+        }
+        // 检查字符数组
+        return checkJson(left, right);
+
+    }
+
+    private static boolean checkJson(Object left, Object right) {
+        if (!(right instanceof String)) {
+            return false;
+        }
+        String rightJson = (String) right;
+        try {
+            Object object = JSONObject.parse(rightJson);
+            return isIn(left, object);
+        } catch (JSONException e) {
+            return false;
+        }
+    }
+
+    private static boolean checkSpilt(Object left, Object right) {
+        Set<String> rightSpiltSet;
+        Set<String> leftSpiltSet;
+        for (String signal : signalSet) {
+            rightSpiltSet = spiltStrToSet(right, signal);
+            leftSpiltSet = spiltStrToSet(left, signal);
+            if (rightSpiltSet.containsAll(leftSpiltSet)) {
+                return true;
+            }
+        }
         return false;
     }
+
+    private static Set<String> spiltStrToSet(Object right, String signal) {
+        return Sets.newHashSet(toString(right).split(signal));
+    }
+
 
     private static boolean notIn(Object left, Object right) {
-        return !in(left, right);
+        return !isIn(left, right);
     }
 
-    private static boolean lowerThan(Object left, Object right) {
-        return false;
+    private static boolean equals(String left, String right) {
+        BigDecimal leftNum = NumberUtil.toBigDecimal(left);
+        BigDecimal rightNum = NumberUtil.toBigDecimal(right);
+        return NumberUtil.equals(leftNum, rightNum);
     }
 
-    private static boolean lowerEqual(Object left, Object right) {
-        return equal(left, right) || lowerThan(left, right);
+    private static boolean isAllNumber(Object... params) {
+        if (params.length < 1) {
+            return false;
+        }
+        for (Object param : params) {
+            if (!NumberUtil.isNumber(toString(param))) {
+                return false;
+            }
+        }
+        return true;
     }
 
-    private static boolean greaterThan(Object left, Object right) {
-        return false;
-    }
+    private static boolean equals(Object left, Object right) {
+        if (isAllNumber(left, right)) {
+            return equals(toString(left), toString(right));
+        }
+        if (isAllDate(left, right)) {
+            Date leftDate = (Date) left;
+            Date rightDate = (Date) right;
+            return equals(leftDate.getTime(), rightDate.getTime());
+        }
 
-    private static boolean greaterEqual(Object left, Object right) {
-        return equal(left, right) || greaterThan(left, right);
-    }
-
-    private static boolean equal(Object left, Object right) {
         return left.equals(right);
     }
 
-    private static boolean notEqual(Object left, Object right) {
-        return !equal(left, right);
+    private static boolean notEquals(Object left, Object right) {
+        return !equals(left, right);
     }
 
-
-    public static final int GT = 1;
-    public static final int GE = 2;
-    public static final int E = 3;
-    public static final int LE = 4;
-    public static final int LT = 5;
-    public static final int NE = 6;
-    public static final int NULL = 7;
-    public static final int NOT_NULL = 8;
-    public static final int NOT_NULL_OR_EMPTY = 9;
-    public static final int NULL_OR_EMPTY = 10;
-
-    static {
-        operators.put(">", GT);
-        operators.put(">=", GE);
-        operators.put("==", E);
-        operators.put("<=", LE);
-        operators.put("<", LT);
-        operators.put("!=", NE);
-        operators.put("GT", GT);
-        operators.put("GE", GE);
-        operators.put("EQ", E);
-        operators.put("LE", LE);
-        operators.put("LT", LT);
-        operators.put("NE", NE);
-    }
-
-    /**
-     * 根据操作符，判断两个boolean类型的条件表达式
-     *
-     * @param l
-     * @param r
-     * @param ops
-     * @return
-     */
-    public static boolean compare(boolean l, boolean r, String ops) {
-        if (!operators.containsKey(ops)) {
-            throw new RuntimeException("unknown relational operator:" + ops);
-        }
-        int op = operators.get(ops);
-
-        switch (op) {
-            case GT:
-                return SimpleConditionUtil.compare(l, r) > 0;
-            case GE:
-                return SimpleConditionUtil.compare(l, r) >= 0;
-            case E:
-                return SimpleConditionUtil.compare(l, r) == 0;
-            case LE:
-                return SimpleConditionUtil.compare(l, r) <= 0;
-            case LT:
-                return SimpleConditionUtil.compare(l, r) < 0;
-            case NE:
-                return SimpleConditionUtil.compare(l, r) != 0;
-            default:
-                return false;
-        }
-    }
-
-    /**
-     * 根据操作符，判断两个String类型的条件表达式
-     *
-     * @param l
-     * @param r
-     * @param ops
-     * @return
-     */
-    public static boolean compare(String l, String r, String ops) {
-        if (!operators.containsKey(ops)) {
-            throw new RuntimeException("unknown relational operator:" + ops);
-        }
-        int op = operators.get(ops);
-        if (l == null) {
-            if (op == NULL || op == NULL_OR_EMPTY || (op == E && r == null) || (op == NE && r != null)) {
+    private static boolean isAnyNull(Object... params) {
+        for (Object param : params) {
+            if (Objects.isNull(param)) {
                 return true;
-            } else {
-                return false;
             }
         }
-
-        switch (op) {
-            case GT:
-                return SimpleConditionUtil.compare(l, r) > 0;
-            case GE:
-                return SimpleConditionUtil.compare(l, r) >= 0;
-            case E:
-                return SimpleConditionUtil.compare(l, r) == 0;
-            case LE:
-                return SimpleConditionUtil.compare(l, r) <= 0;
-            case LT:
-                return SimpleConditionUtil.compare(l, r) < 0;
-            case NE:
-                return SimpleConditionUtil.compare(l, r) != 0;
-            case NULL:
-                return l == null;
-            case NOT_NULL:
-                return l != null;
-            case NULL_OR_EMPTY:
-                return l == null || l.length() < 1;
-            case NOT_NULL_OR_EMPTY:
-                return l != null && l.length() > 0;
-            default:
-                return false;
-        }
+        return false;
     }
-
-    /**
-     * 根据操作符，判断boolean和String类型的条件表达式
-     *
-     * @param l
-     * @param r
-     * @param ops
-     * @return
-     */
-    public static boolean compare(boolean l, String r, String ops) {
-        boolean rValue = Boolean.parseBoolean(r);
-        return compare(l, rValue, ops);
-    }
-
-    /**
-     * 根据操作符，判断两个char类型的条件表达式
-     *
-     * @param l
-     * @param r
-     * @param ops
-     * @return
-     */
-    public static boolean compare(char l, char r, String ops) {
-        if (!operators.containsKey(ops)) {
-            //throw new RuntimeException("unknown relational operator:"+ops);
-            //throw new ClassBuildException(ExceptionConstant.CLASSBUILD_16100037,new Object[]{ops});
-        }
-        int op = operators.get(ops);
-
-        switch (op) {
-            case GT:
-                return SimpleConditionUtil.compare(l, r) > 0;
-            case GE:
-                return SimpleConditionUtil.compare(l, r) >= 0;
-            case E:
-                return SimpleConditionUtil.compare(l, r) == 0;
-            case LE:
-                return SimpleConditionUtil.compare(l, r) <= 0;
-            case LT:
-                return SimpleConditionUtil.compare(l, r) < 0;
-            case NE:
-                return SimpleConditionUtil.compare(l, r) != 0;
-            default:
-                return false;
-        }
-    }
-
-    /**
-     * 根据操作符，判断char,String类型的条件表达式
-     *
-     * @param l
-     * @param r
-     * @param ops
-     * @return
-     */
-    public static boolean compare(char l, String r, String ops) {
-        if (r == null || r.length() != 1) {
-            return false;
-        }
-
-        return compare(l, r.charAt(0), ops);
-    }
-
-    /**
-     * 根据操作符，判断两个int类型的条件表达式
-     *
-     * @param l
-     * @param r
-     * @param ops
-     * @return
-     */
-    public static boolean compare(int l, int r, String ops) {
-        if (!operators.containsKey(ops)) {
-            //throw new RuntimeException("unknown relational operator:"+ops);
-            throw new ClassBuildException(ExceptionConstant.CLASSBUILD_16100037, new Object[]{ops});
-        }
-        int op = operators.get(ops);
-
-        switch (op) {
-            case GT:
-                return SimpleConditionUtil.compare(l, r) > 0;
-            case GE:
-                return SimpleConditionUtil.compare(l, r) >= 0;
-            case E:
-                return SimpleConditionUtil.compare(l, r) == 0;
-            case LE:
-                return SimpleConditionUtil.compare(l, r) <= 0;
-            case LT:
-                return SimpleConditionUtil.compare(l, r) < 0;
-            case NE:
-                return SimpleConditionUtil.compare(l, r) != 0;
-            default:
-                return false;
-        }
-    }
-
-    /**
-     * 根据操作符，判断int,String类型的条件表达式
-     *
-     * @param l
-     * @param r
-     * @param ops
-     * @return
-     */
-    public static boolean compare(int l, String r, String ops) {
-        int rValue = Double.valueOf(r).intValue();
-        return compare(l, rValue, ops);
-    }
-
-    /**
-     * 根据操作符，判断两个long类型的条件表达式
-     *
-     * @param l
-     * @param r
-     * @param ops
-     * @return
-     */
-    public static boolean compare(long l, long r, String ops) {
-        if (!operators.containsKey(ops)) {
-            //throw new RuntimeException("unknown relational operator:"+ops);
-            throw new ClassBuildException(ExceptionConstant.CLASSBUILD_16100037, new Object[]{ops});
-        }
-
-        int op = operators.get(ops);
-
-        switch (op) {
-            case GT:
-                return SimpleConditionUtil.compare(l, r) > 0;
-            case GE:
-                return SimpleConditionUtil.compare(l, r) >= 0;
-            case E:
-                return SimpleConditionUtil.compare(l, r) == 0;
-            case LE:
-                return SimpleConditionUtil.compare(l, r) <= 0;
-            case LT:
-                return SimpleConditionUtil.compare(l, r) < 0;
-            case NE:
-                return SimpleConditionUtil.compare(l, r) != 0;
-            default:
-                return false;
-        }
-    }
-
-    /**
-     * 根据操作符，判断long,String类型的条件表达式
-     *
-     * @param l
-     * @param r
-     * @param ops
-     * @return
-     */
-    public static boolean compare(long l, String r, String ops) {
-        long rValue = Double.valueOf(r).longValue();
-        return compare(l, rValue, ops);
-    }
-
-    /**
-     * 根据操作符，判断两个double类型的条件表达式
-     *
-     * @param l
-     * @param r
-     * @param ops
-     * @return
-     */
-    public static boolean compare(double l, double r, String ops) {
-        if (!operators.containsKey(ops)) {
-            //throw new RuntimeException("unknown relational operator:"+ops);
-            throw new ClassBuildException(ExceptionConstant.CLASSBUILD_16100037, new Object[]{ops});
-        }
-
-        int op = operators.get(ops);
-
-        switch (op) {
-            case GT:
-                return SimpleConditionUtil.compare(l, r) > 0;
-            case GE:
-                return SimpleConditionUtil.compare(l, r) >= 0;
-            case E:
-                return SimpleConditionUtil.compare(l, r) == 0;
-            case LE:
-                return SimpleConditionUtil.compare(l, r) <= 0;
-            case LT:
-                return SimpleConditionUtil.compare(l, r) < 0;
-            case NE:
-                return SimpleConditionUtil.compare(l, r) != 0;
-            default:
-                return false;
-        }
-    }
-
-    /**
-     * 根据操作符，判断double,String类型的条件表达式
-     *
-     * @param l
-     * @param r
-     * @param ops
-     * @return
-     */
-    public static boolean compare(double l, String r, String ops) {
-        double rValue = Double.valueOf(r).doubleValue();
-        return compare(l, rValue, ops);
-    }
-
-    /**
-     * 根据操作符，判断两个Date类型的条件表达式
-     *
-     * @param l
-     * @param r
-     * @param ops
-     * @return
-     */
-    public static boolean compare(Date l, Date r, String ops) {
-        if (!operators.containsKey(ops)) {
-            //throw new RuntimeException("unknown relational operator:"+ops);
-            throw new ClassBuildException(ExceptionConstant.CLASSBUILD_16100037, new Object[]{ops});
-        }
-
-        int op = operators.get(ops);
-        if (l == null) {
-            if (op == NULL || op == NULL_OR_EMPTY || (op == E && r == null) || (op == NE && r != null)) {
-                return true;
-            } else {
-                return false;
-            }
-        }
-
-        switch (op) {
-            case GT:
-                return SimpleConditionUtil.compare(l, r) > 0;
-            case GE:
-                return SimpleConditionUtil.compare(l, r) >= 0;
-            case E:
-                return SimpleConditionUtil.compare(l, r) == 0;
-            case LE:
-                return SimpleConditionUtil.compare(l, r) <= 0;
-            case LT:
-                return SimpleConditionUtil.compare(l, r) < 0;
-            case NE:
-                return SimpleConditionUtil.compare(l, r) != 0;
-            default:
-                return false;
-        }
-    }
-
-    /**
-     * 根据操作符，判断Date,String类型的条件表达式
-     *
-     * @param l
-     * @param r
-     * @param ops
-     * @return
-     */
-    public static boolean compare(Date l, String r, String ops) {
-        Date rValue = DataUtil.toDate(r);
-        return compare(l, rValue, ops);
-    }
-
-    /**
-     * 根据操作符，判断两个Object类型的条件表达式
-     *
-     * @param l
-     * @param r
-     * @return
-     */
-    @SuppressWarnings("unchecked")
-    public static boolean compare(Object l, Object r) {
-        String ops = "a";
-        if (!operators.containsKey("a")) {
-            //throw new RuntimeException("unknown relational operator:"+ops);
-            throw new ClassBuildException(ExceptionConstant.CLASSBUILD_16100037, new Object[]{ops});
-        }
-        int op = operators.get("a");
-
-        //if both are Numbers; then comare as double values;
-        boolean flag = false;
-        if ((l instanceof Number && r instanceof Number) ||
-                (l instanceof Number && r instanceof String) ||
-                (l instanceof Boolean && r instanceof String) ||
-                (l instanceof Date && r instanceof String) ||
-                (l instanceof Date && r instanceof Date) ||
-                (l instanceof String && r instanceof String) ||
-                (l instanceof Character && r instanceof String) ||
-                (l instanceof String && r instanceof Character)) {
-            flag = true;
-        }
-
-        switch (op) {
-            case GT:
-                if (l == null || r == null) {
-                    return false;
-                }
-                return SimpleConditionUtil.compare(l, r) > 0;
-            case GE:
-                if (l == null || r == null) {
-                    return false;
-                }
-                return SimpleConditionUtil.compare(l, r) >= 0;
-            case E:
-                // TODO:如果flag==true了,l和r就不会是null.
-                // if (l == null || r == null) {
-                // return false;
-                // }
-                if (flag) {
-                    return SimpleConditionUtil.compare(l, r) == 0;
-                } else {
-                    if (l == null) {
-                        if (r == null) {
-                            return true;
-                        }
-                        return false;
-                    }
-                    return l.equals(r);
-                }
-            case LE:
-                if (l == null || r == null) {
-                    return false;
-                }
-                return SimpleConditionUtil.compare(l, r) <= 0;
-            case LT:
-                if (l == null || r == null) {
-                    return false;
-                }
-                return SimpleConditionUtil.compare(l, r) < 0;
-            case NE:
-                if (flag) {
-                    return SimpleConditionUtil.compare(l, r) != 0;
-                } else {
-                    if (l == null) {
-                        if (r == null)
-                            return false;
-                        return true;
-                    }
-                    return !l.equals(r);
-                }
-            case NULL:
-                return l == null;
-            case NOT_NULL:
-                return l != null;
-            case NULL_OR_EMPTY:
-                if (l instanceof Number) {
-                    return ((Number) l).doubleValue() == 0;  //BUG: 39194 数值类型为float、double时，当数值介于-1和1之间时，用NullOrEmpty判定时返回True!
-                } else {
-                    if (l == null) {
-                        return true;
-                    } else {
-                        Class cls = l.getClass();
-                        if (cls.isArray()) {
-                            return Array.getLength(l) == 0;
-                        } else if (cls == String.class) {
-                            return ((String) l).length() < 1;
-                        } else if (l instanceof Collection) {
-                            return ((Collection) l).isEmpty();
-                        }
-                    }
-
-                }
-            case NOT_NULL_OR_EMPTY:
-                if (l instanceof Number) {
-                    return ((Number) l).intValue() != 0;
-                } else {
-                    if (l == null) {
-                        return false;
-                    } else {
-                        Class cls = l.getClass();
-                        if (cls.isArray()) {
-                            return Array.getLength(l) > 0;
-                        } else if (cls == String.class) {
-                            return ((String) l).length() > 0;
-                        } else if (l instanceof Collection) {
-                            return !((Collection) l).isEmpty();
-                        }
-                    }
-                }
-            default:
-                return false;
-        }
-    }
-
-    /**
-     * @param o              需要转的数组对象
-     * @param componentClass 目标class
-     * @return 转后的数组对象
-     */
-    public static Object array2Array(Object o, Class componentClass) {
-        if (null == o)
-            return o;
-        if (o.getClass().isArray()) {
-            if (null == componentClass) {
-                return o;
-            }
-            if (o.getClass().getComponentType() != componentClass) {
-                int length = Array.getLength(o);
-                Object newArray = Array.newInstance(componentClass, length);
-                Object tmp = null;
-                for (int i = 0; i < length; i++) {
-                    tmp = DataUtil.toType(componentClass, Array.get(o, i));
-                    Array.set(newArray, i, tmp);
-                }
-                return newArray;
-            } else {
-                return o;
-            }
-        }
-        throw new IllegalArgumentException(componentClass.getCanonicalName());
-    }
-
-
-//	/**
-//	 * 根据操作符，判断两个boolean类型的条件表达式
-//	 * @param l
-//	 * @param r
-//	 * @param ops
-//	 * @return
-//	 */
-//	public static boolean compare(boolean l,boolean r, String ops){
-//		if(!operators.containsKey(ops)){
-//			throw new RuntimeException("unknown relational operator:"+ops);
-//		}
-//		int op = operators.get(ops);
-//
-//		switch(op){
-//		case GT:
-//			return false;
-//		case GE:
-//			return false;
-//		case E:
-//			return l==r;
-//		case LE:
-//			return false;
-//		case LT:
-//			return false;
-//		case NE:
-//			return l!=r;
-//		default:
-//			return false;
-//		}
-//	}
-//	/**
-//	 * 根据操作符，判断两个String类型的条件表达式
-//	 * @param l
-//	 * @param r
-//	 * @param ops
-//	 * @return
-//	 */
-//	public static boolean compare(String l,String r, String ops){
-//		if(!operators.containsKey(ops)){
-//			throw new RuntimeException("unknown relational operator:"+ops);
-//		}
-//		int op = operators.get(ops);
-//		if(l == null){
-//            if(op == NULL || op == NULL_OR_EMPTY || op==E && r ==null){
-//                return true;
-//            }else{
-//                return false;
-//            }
-//        }
-//
-//		switch(op){
-//		case GT:
-//			return l.compareTo(r)>0;
-//		case GE:
-//			return l.compareTo(r)>=0;
-//		case E:
-//			return l.compareTo(r)==0;
-//		case LE:
-//			return l.compareTo(r)<=0;
-//		case LT:
-//			return l.compareTo(r)<0;
-//		case NE:
-//			return l.compareTo(r)!=0;
-//		case NULL:
-//			return l==null;
-//		case NOT_NULL:
-//			return l!=null;
-//		case NULL_OR_EMPTY:
-//			return l == null || l.length()<1;
-//		case NOT_NULL_OR_EMPTY:
-//			return l != null && l.length()>0;
-//		default:
-//			return false;
-//		}
-//	}
-//	/**
-//	 * 根据操作符，判断boolean和String类型的条件表达式
-//	 * @param l
-//	 * @param r
-//	 * @param ops
-//	 * @return
-//	 */
-//	public static boolean compare(boolean l,String r, String ops){
-//		boolean rValue = Boolean.parseBoolean(r);
-//		return compare(l,rValue,ops);
-//	}
-//
-//	/**
-//	 * 根据操作符，判断两个char类型的条件表达式
-//	 * @param l
-//	 * @param r
-//	 * @param ops
-//	 * @return
-//	 */
-//	public static boolean compare(char l,char r, String ops){
-//		if(!operators.containsKey(ops)){
-//			//throw new RuntimeException("unknown relational operator:"+ops);
-//			throw new ClassBuildException(ExceptionConstant.CLASSBUILD_16100037,new Object[]{ops});
-//		}
-//		int op = operators.get(ops);
-//
-//		switch(op){
-//		case GT:
-//			return l>r;
-//		case GE:
-//			return l>=r;
-//		case E:
-//			return l==r;
-//		case LE:
-//			return l<=r;
-//		case LT:
-//			return l<r;
-//		case NE:
-//			return l!=r;
-//		default:
-//			return false;
-//		}
-//	}
-//
-//	/**
-//	 * 根据操作符，判断char,String类型的条件表达式
-//	 * @param l
-//	 * @param r
-//	 * @param ops
-//	 * @return
-//	 */
-//	public static boolean compare(char l,String r, String ops){
-//		if(r == null || r.length()!=1){
-//			return false;
-//		}
-//
-//		return compare(l,r.charAt(0),ops);
-//	}
-//
-//	/**
-//	 * 根据操作符，判断两个int类型的条件表达式
-//	 * @param l
-//	 * @param r
-//	 * @param ops
-//	 * @return
-//	 */
-//	public static boolean compare(int l,int r, String ops){
-//		if(!operators.containsKey(ops)){
-//			//throw new RuntimeException("unknown relational operator:"+ops);
-//			throw new ClassBuildException(ExceptionConstant.CLASSBUILD_16100037,new Object[]{ops});
-//		}
-//		int op = operators.get(ops);
-//
-//		switch(op){
-//		case GT:
-//			return l>r;
-//		case GE:
-//			return l>=r;
-//		case E:
-//			return l==r;
-//		case LE:
-//			return l<=r;
-//		case LT:
-//			return l<r;
-//		case NE:
-//			return l!=r;
-//		default:
-//			return false;
-//		}
-//	}
-//
-//	/**
-//	 * 根据操作符，判断int,String类型的条件表达式
-//	 * @param l
-//	 * @param r
-//	 * @param ops
-//	 * @return
-//	 */
-//	public static boolean compare(int l,String r, String ops){
-//		int rValue = Double.valueOf(r).intValue();
-//		return compare(l,rValue,ops);
-//	}
-//
-//	/**
-//	 * 根据操作符，判断两个long类型的条件表达式
-//	 * @param l
-//	 * @param r
-//	 * @param ops
-//	 * @return
-//	 */
-//	public static boolean compare(long l,long r,String ops){
-//		if(!operators.containsKey(ops)){
-//			//throw new RuntimeException("unknown relational operator:"+ops);
-//			throw new ClassBuildException(ExceptionConstant.CLASSBUILD_16100037,new Object[]{ops});
-//		}
-//
-//		int op = operators.get(ops);
-//
-//		switch(op){
-//		case GT:
-//			return l>r;
-//		case GE:
-//			return l>=r;
-//		case E:
-//			return l==r;
-//		case LE:
-//			return l<=r;
-//		case LT:
-//			return l<r;
-//		case NE:
-//			return l!=r;
-//		default:
-//			return false;
-//		}
-//	}
-//
-//	/**
-//	 * 根据操作符，判断long,String类型的条件表达式
-//	 * @param l
-//	 * @param r
-//	 * @param ops
-//	 * @return
-//	 */
-//	public static boolean compare(long l,String r, String ops){
-//		long rValue = Double.valueOf(r).longValue();
-//		return compare(l,rValue,ops);
-//	}
-//	/**
-//	 * 根据操作符，判断两个double类型的条件表达式
-//	 * @param l
-//	 * @param r
-//	 * @param ops
-//	 * @return
-//	 */
-//	public static boolean compare(double l,double r,String ops){
-//		if(!operators.containsKey(ops)){
-//			//throw new RuntimeException("unknown relational operator:"+ops);
-//			throw new ClassBuildException(ExceptionConstant.CLASSBUILD_16100037,new Object[]{ops});
-//		}
-//
-//		int op = operators.get(ops);
-//
-//		switch(op){
-//		case GT:
-//			return l>r;
-//		case GE:
-//			return l>=r;
-//		case E:
-//			return l==r;
-//		case LE:
-//			return l<=r;
-//		case LT:
-//			return l<r;
-//		case NE:
-//			return l!=r;
-//		default:
-//			return false;
-//		}
-//	}
-//	/**
-//	 * 根据操作符，判断double,String类型的条件表达式
-//	 * @param l
-//	 * @param r
-//	 * @param ops
-//	 * @return
-//	 */
-//	public static boolean compare(double l,String r, String ops){
-//		double rValue = Double.valueOf(r).doubleValue();
-//		return compare(l,rValue,ops);
-//	}
-//	/**
-//	 * 根据操作符，判断两个Date类型的条件表达式
-//	 * @param l
-//	 * @param r
-//	 * @param ops
-//	 * @return
-//	 */
-//	public static boolean compare(Date l,Date r,String ops){
-//		if(!operators.containsKey(ops)){
-//			//throw new RuntimeException("unknown relational operator:"+ops);
-//			throw new ClassBuildException(ExceptionConstant.CLASSBUILD_16100037,new Object[]{ops});
-//		}
-//
-//		int op = operators.get(ops);
-//		if(l == null){
-//            if(op == NULL || op == NULL_OR_EMPTY || op==E && r ==null){
-//                return true;
-//            }else{
-//                return false;
-//            }
-//        }
-//
-//		switch(op){
-//		case GT:
-//			return l.compareTo(r)>0;
-//		case GE:
-//			return l.compareTo(r)>=0;
-//		case E:
-//			return l.compareTo(r)==0;
-//		case LE:
-//			return l.compareTo(r)<=0;
-//		case LT:
-//			return l.compareTo(r)<0;
-//		case NE:
-//			return l.compareTo(r)!=0;
-//		default:
-//			return false;
-//		}
-//	}
-//	/**
-//	 * 根据操作符，判断Date,String类型的条件表达式
-//	 * @param l
-//	 * @param r
-//	 * @param ops
-//	 * @return
-//	 */
-//	public static boolean compare(Date l,String r, String ops){
-//		Date rValue = DataUtil.toDate(r);
-//		return compare(l,rValue,ops);
-//	}
-//	/**
-//	 * 根据操作符，判断两个Object类型的条件表达式
-//	 * @param l
-//	 * @param r
-//	 * @param ops
-//	 * @return
-//	 */
-//	@SuppressWarnings("unchecked")
-//	public static boolean compare(Object l,Object r,String ops){
-//		//if both are Numbers; then comare as double values;
-//		if(l instanceof Number && r instanceof Number){
-//			return compare(((Number)l).doubleValue(),((Number)r).doubleValue(),ops);
-//		}else if (l instanceof Number && r instanceof String){
-//			return compare(((Number)l).doubleValue(),(String)r,ops);
-//		}else if (l instanceof Boolean && r instanceof String){
-//			return compare(((Boolean)l).booleanValue(),(String)r,ops);
-//		}else if(l instanceof Date && r instanceof String){
-//			return compare((Date)l,(String)r,ops);
-//		}else if(l instanceof Date && r instanceof Date){
-//			return compare((Date)l,(Date)r,ops);
-//		}else if(l instanceof String && r instanceof String){
-//			return compare((String)l,(String)r,ops);
-//		}else if(l instanceof Character && r instanceof String){
-//			return compare(((Character)l).charValue(),(String)r,ops);
-//		}else if(l instanceof String && r instanceof Character){
-//			return compare((String)l,((Character)r).toString(),ops);
-//		}
-//
-//		if(!operators.containsKey(ops)){
-//			//throw new RuntimeException("unknown relational operator:"+ops);
-//			throw new ClassBuildException(ExceptionConstant.CLASSBUILD_16100037,new Object[]{ops});
-//		}
-//		int op = operators.get(ops);
-//
-//		switch(op){
-//		case GT:
-//			if(l == null || r == null){
-//				return false;
-//			}
-//			//if implements Comparable interface;
-//			if(!(l instanceof Comparable)){
-//				return false;
-//			}
-//			return ((Comparable)l).compareTo(r)>0;
-//		case GE:
-//			if(l == null || r == null){
-//				return false;
-//			}
-//			//if implements Comparable interface;
-//			if(!(l instanceof Comparable)){
-//				return false;
-//			}
-//			return ((Comparable)l).compareTo(r)>=0;
-//		case E:
-//			if(l == null || r == null){
-//				return false;
-//			}
-//
-//			return l.equals(r);
-//		case LE:
-//			if(l == null || r == null){
-//				return false;
-//			}
-//			//if implements Comparable interface;
-//			if(!(l instanceof Comparable)){
-//				return false;
-//			}
-//			return ((Comparable)l).compareTo(r)<=0;
-//		case LT:
-//			if(l == null || r == null){
-//				return false;
-//			}
-//			//if implements Comparable interface;
-//			if(!(l instanceof Comparable)){
-//				return false;
-//			}
-//			return ((Comparable)l).compareTo(r)<0;
-//		case NE:
-//			if(l == null || r == null){
-//				return false;
-//			}
-//			return !l.equals(r);
-//		case NULL:
-//			return l==null;
-//		case NOT_NULL:
-//			return l!=null;
-//		case NULL_OR_EMPTY:
-//			if(l instanceof Number){
-//				return ((Number)l).intValue() == 0;
-//			}else{
-//				if(l== null){
-//					return true;
-//				}else{
-//					Class cls = l.getClass();
-//					if(cls.isArray()){
-//						return Array.getLength(l)==0;
-//					}else if(cls == String.class){
-//						return ((String)l).length()<1;
-//					}
-//				}
-//
-//			}
-//		case NOT_NULL_OR_EMPTY:
-//			if(l instanceof Number){
-//				return ((Number)l).intValue() != 0;
-//			}else{
-//				if(l== null){
-//					return true;
-//				}else{
-//					Class cls = l.getClass();
-//					if(cls.isArray()){
-//						return Array.getLength(l)>0;
-//					}else if(cls == String.class){
-//						return ((String)l).length()>0;
-//					}
-//				}
-//			}
-//		default:
-//			return false;
-//		}
-//	}
-
 
 }
