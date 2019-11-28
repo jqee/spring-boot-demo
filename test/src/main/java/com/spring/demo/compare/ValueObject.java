@@ -8,6 +8,8 @@
 
 package com.spring.demo.compare;
 
+import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 
 /**
@@ -16,12 +18,16 @@ import lombok.Data;
  * @author haoyf (mailto: haoyf@primeton.com)
  */
 @Data
+@Builder
+@AllArgsConstructor
 public class ValueObject {
 
     private ValueType type = ValueType.Constant;
     private String propertyId;
     private String entityId;
     private String value;
-    private String realValue;
+    private Object realValue;
 
+    public ValueObject() {
+    }
 }

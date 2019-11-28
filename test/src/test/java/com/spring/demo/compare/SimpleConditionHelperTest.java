@@ -22,6 +22,7 @@ public class SimpleConditionHelperTest {
     public void hello() {
         List<String> aa = Collections.singletonList("cc");
         testCompare("cc", aa, Operator.IN, true);
+        testCompare("cc", aa, Operator.IN, true);
         testCompare("1", "[\"1\",\"2\",\"3\"]", Operator.IN, true);
         testCompare(1, "[\"1\",\"2\",\"3\"]", Operator.IN, true);
         testCompare("4", "[\"1\",\"2\",\"3\"]", Operator.IN, false);

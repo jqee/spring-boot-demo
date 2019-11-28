@@ -1,5 +1,6 @@
 package com.spring.demo.compare;
 
+import cn.hutool.core.lang.Console;
 import cn.hutool.core.util.NumberUtil;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONException;
@@ -30,11 +31,12 @@ public final class SimpleConditionHelper {
     public static boolean value(SimpleCondition condition, ExpContext context) {
         Object left = getValue(condition.getLeftValue(), context);
         Object right = getValue(condition.getRightValue(), context);
-        if (left == null && right == null) {
-            return false;
-        }
-        return compare(left, right, condition.getOperator());
+        boolean result = compare(left, right, condition.getOperator());
+        String str = String.format("%-5s", result);
+        Console.log("result: {} | {} {} {}", str, left, condition.getOperator().getSymbol(), right);
+        return result;
     }
+
 
     private static Object getValue(ValueObject valueObject, ExpContext context) {
         if (valueObject == null) {
@@ -51,7 +53,11 @@ public final class SimpleConditionHelper {
     }
 
     private static Object getValue(String value, ExpContext context) {
-        return context.get(value);
+        if (context.contains(value)) {
+            return context.get(value);
+        }
+
+        return null;
     }
 
     private static boolean isConstant(ValueType type) {
@@ -63,6 +69,11 @@ public final class SimpleConditionHelper {
     }
 
     public static boolean compare(Object left, Object right, Operator operator) {
+
+        if (left == null) {
+            return false;
+        }
+
         switch (operator) {
             case EQ:
                 return equals(left, right);
@@ -153,7 +164,8 @@ public final class SimpleConditionHelper {
     }
 
     private static boolean isEmpty(Object left) {
-        return isEmpty(toString(left));
+        boolean res = isEmpty(toString(left));
+        return res;
     }
 
     private static boolean isEmpty(String left) {
@@ -190,6 +202,9 @@ public final class SimpleConditionHelper {
     private static boolean isIn(Object left, Object right) {
         if (isAnyNull(left, right)) {
             return false;
+        }
+        if (equals(left, right)) {
+            return true;
         }
         if (right instanceof Map) {
             Map<Object, Object> map = (Map<Object, Object>) right;

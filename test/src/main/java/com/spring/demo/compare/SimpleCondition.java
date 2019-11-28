@@ -9,18 +9,27 @@
 package com.spring.demo.compare;
 
 
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+
 /**
  * SingleExpression.
  *
  * @author haoyf (mailto: haoyf@primeton.com)
  */
+@Builder
+@Data
+@AllArgsConstructor
 public class SimpleCondition implements ConditionExpression {
 
+
+    public SimpleCondition() {
+    }
 
     /**
      * 逻辑判断执行者
      */
-
     private ValueObject leftValue = new ValueObject();
     private ValueObject rightValue = new ValueObject();
     private Operator operator = Operator.IS_EMPTY;

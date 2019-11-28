@@ -15,10 +15,57 @@ import java.util.Map;
  *
  * @author haoyf (mailto: haoyf@primeton.com)
  */
-public abstract class ExpContext {
-    private Map<String, Object> data;
+public interface ExpContext {
 
-    public Object get(String key) {
-        return data.get(key);
-    }
+    /**
+     * 获取
+     *
+     * @param path 路径
+     * @return 值
+     */
+    Object get(String path);
+
+    /**
+     * 查询
+     *
+     * @param path 路径
+     * @return true or false
+     */
+    boolean contains(String path);
+
+    /**
+     * 查询
+     *
+     * @param key  路径
+     * @param value 值
+     * @return true or false
+     */
+    boolean containsValue(String key, Object value);
+
+    /**
+     * size
+     *
+     * @param path path
+     * @return size
+     */
+    int size(String path);
+
+
+    /**
+     * put
+     *
+     * @param path  path
+     * @param value value
+     */
+    void put(String path, Object value);
+
+
+    /**
+     * put all
+     *
+     * @param map map
+     */
+    void putAll(Map<String, Object> map);
+
+
 }
